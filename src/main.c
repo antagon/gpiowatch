@@ -40,9 +40,15 @@ main (int argc, char *argv[])
 			goto egress;
 		}
 
-		fds[i].fd = sysfs_gpio_read (gpio_id[i]);
-		fds[i].events = POLLPRI;
+		if ( sysfs_gpio_set_edge (gpio_id[i], GPIO_EDGBOTH) == -1 ){
+			fprintf (stderr, "cannot set edge for GPIO (%d): %s\n", gpio_id[i], strerror (errno));
+			ret = EXIT_FAILURE;
+			goto egress;
+		}
+
+		fds[i].events = POLLPRI | POLLERR;
 		fds[i].revents = 0;
+		fds[i].fd = sysfs_gpio_open (gpio_id[i]);
 
 		if ( fds[i].fd == -1 ){
 			fprintf (stderr, "cannot read from GPIO (%d) interface: %s\n", gpio_id[i], strerror (errno));
@@ -75,6 +81,19 @@ main (int argc, char *argv[])
 				}
 
 				fprintf (stderr, "have data on GPIO #%d (%c)\n", gpio_id[i], buff[0]);
+
+				/* Set file pointer back to the beginning. */
+				if ( lseek (fds[i].fd, 0, SEEK_SET) == -1 ){
+					fprintf (stderr, "lseek failed: %s\n", strerror (errno));
+					ret = EXIT_FAILURE;
+					goto egress;
+				}
+			}
+
+			if ( fds[i].revents & POLLERR ){
+				fprintf (stderr, "have an error on GPIO #%d\n", gpio_id[i]);
+				ret = EXIT_FAILURE;
+				goto egress;
 			}
 		}
 	}
