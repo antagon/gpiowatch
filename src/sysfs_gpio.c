@@ -93,7 +93,59 @@ egress:
 }
 
 int
-sysfs_gpio_read (int gpio)
+sysfs_gpio_set_edge (int gpio, int edge)
+{
+	char path[64];
+	char buff[16];
+	const char *edge_strval;
+	ssize_t len;
+	int fd, ret;
+
+	ret = 0;
+
+	switch ( edge ){
+		case GPIO_EDGNONE:
+			edge_strval = "none";
+			break;
+
+		case GPIO_EDGRISING:
+			edge_strval = "rising";
+			break;
+
+		case GPIO_EDGFALLING:
+			edge_strval = "falling";
+			break;
+
+		case GPIO_EDGBOTH:
+			edge_strval = "both";
+			break;
+
+		default:
+			return -1;
+	}
+
+	snprintf (path, sizeof (path), "/sys/class/gpio/gpio%d/direction", gpio);
+
+	fd = open (path, O_WRONLY);
+
+	if ( fd == -1 )
+		return -1;
+
+	len = snprintf (buff, sizeof (buff), "%s", edge_strval);
+
+	if ( write (fd, buff, len) == -1 ){
+		ret = -1;
+		goto egress;
+	}
+
+egress:
+	close (fd);
+
+	return ret;
+}
+
+int
+sysfs_gpio_open (int gpio)
 {
 	char path[64];
 	int fd;

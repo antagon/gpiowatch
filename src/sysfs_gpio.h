@@ -15,13 +15,23 @@ enum
 	GPIO_DOUT = 1
 };
 
+enum
+{
+	GPIO_EDGNONE = 0,
+	GPIO_EDGRISING = 1,
+	GPIO_EDGFALLING = 2,
+	GPIO_EDGBOTH = 3
+};
+
 extern int sysfs_gpio_export (int gpio);
 
 extern int sysfs_gpio_unexport (int gpio);
 
 extern int sysfs_gpio_set_direction (int gpio, int direction);
 
-extern int sysfs_gpio_read (int gpio);
+extern int sysfs_gpio_set_edge (int gpio, int edge);
+
+extern int sysfs_gpio_open (int gpio);
 
 #endif
 
