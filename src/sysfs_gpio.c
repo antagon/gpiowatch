@@ -1,3 +1,11 @@
+/*
+ * sysfs_gpio.c -- sysfs interface for manipulation GPIO pins.
+ *
+ * Copyright (C) 2017 CodeWard.org
+ *
+ * This software may be modified and distributed under the terms
+ * of the MIT license.  See the LICENSE file for details.
+ */
 #include <stdio.h>
 #include <errno.h>
 #include <sys/types.h>
