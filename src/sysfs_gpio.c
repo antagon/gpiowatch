@@ -124,7 +124,7 @@ sysfs_gpio_set_edge (int gpio, int edge)
 			return -1;
 	}
 
-	snprintf (path, sizeof (path), "/sys/class/gpio/gpio%d/direction", gpio);
+	snprintf (path, sizeof (path), "/sys/class/gpio/gpio%d/edge", gpio);
 
 	fd = open (path, O_WRONLY);
 
