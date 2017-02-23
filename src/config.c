@@ -37,7 +37,7 @@ isterminator (char sym)
 }
 
 static int
-parse_line (const char *line, struct config_entry *entry)
+parse_line (const char *line, struct config_entry *entry, struct config_err *error)
 {
 	size_t i, len, ret;
 	int step, digit;
@@ -69,13 +69,13 @@ parse_line (const char *line, struct config_entry *entry)
 				} else if ( isterminator (line[i]) ){
 					step = PARSE_THRSHLD;
 				} else {
-					entry->echr = ret + 1;
+					if ( error != NULL )
+						error->echr = ret + 1;
 					ret = -1;
 					goto egress;
 				}
 
-				//entry->pin_mask ^= (-1 ^ entry->pin_mask) & (1 << digit);
-				entry->pin_mask = entry->pin_mask & (~(1 << digit) | (1 << digit));
+				entry->pin_mask ^= (-1 ^ entry->pin_mask) & (1 << digit);
 				digit = 0;
 				break;
 
@@ -87,7 +87,8 @@ parse_line (const char *line, struct config_entry *entry)
 				} else if ( isterminator (line[i]) ){
 					step = PARSE_CMD;
 				} else {
-					entry->echr = ret + 1;
+					if ( error != NULL )
+						error->echr = ret + 1;
 					ret = -1;
 					goto egress;
 				}
@@ -113,7 +114,7 @@ egress:
 }
 
 int
-config_parse (const char *path, struct config_entry **config)
+config_parse (const char *path, struct config_entry **config, struct config_err *error)
 {
 	FILE *file;
 	char buff[CONFIG_LINE_MAXLEN];
@@ -130,7 +131,7 @@ config_parse (const char *path, struct config_entry **config)
 		if ( buff[strlen (buff) - 1] == '\n' || buff[strlen (buff) - 1] == '\r' )
 			buff[strlen (buff) - 1] = '\0';
 
-		switch ( parse_line (buff, &parsed) ){
+		switch ( parse_line (buff, &parsed, error) ){
 			case -1:
 				ret = -1;
 				goto egress;
