@@ -7,9 +7,11 @@
  * of the MIT license.  See the LICENSE file for details.
  */
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <signal.h>
 #include <poll.h>
 #include <syslog.h>
 #include <getopt.h>
@@ -21,11 +23,13 @@ int
 main (int argc, char *argv[])
 {
 	char buff[16];
-	char gpio_id[] = { 2, 3, 4, 17, 18, 27, 22, 23, 24, 10, 9, 11, 25, 8, 7, 5, 6, 13, 19, 26, 12, 16, 20, 21 };
+	char gpio_id[] = { 17, 27, 22, 18, 23, 24, 25, 5, 6, 13, 19, 26, 12, 16, 20, 21 };
 	struct pollfd fds[sizeof (gpio_id) / sizeof (gpio_id[0])];
+	uint32_t pin_state;
 	int ret, i, pollres;
 
 	ret = EXIT_SUCCESS;
+	pin_state = 0;
 
 	for ( i = 0; i < sizeof (gpio_id) / sizeof (gpio_id[0]); i++ ){
 		if ( sysfs_gpio_export (gpio_id[i]) == -1 ){
@@ -46,7 +50,7 @@ main (int argc, char *argv[])
 			goto egress;
 		}
 
-		fds[i].events = POLLPRI | POLLERR;
+		fds[i].events = POLLPRI;
 		fds[i].revents = 0;
 		fds[i].fd = sysfs_gpio_open (gpio_id[i]);
 
@@ -58,17 +62,15 @@ main (int argc, char *argv[])
 	}
 
 	for ( ;; ){
-		fprintf (stderr, "waiting for data...\n");
-
-		pollres = poll (fds, sizeof (fds) / sizeof (fds[0]), -1);
+		pollres = poll (fds, sizeof (fds) / sizeof (fds[0]), 1000);
 
 		switch ( pollres ){
 			case -1:
 				fprintf (stderr, "poll failed: %s\n", strerror (errno));
 				ret = EXIT_FAILURE;
 				goto egress;
+
 			case 0:
-				fprintf (stderr, "poll timeout\n");
 				continue;
 		}
 
@@ -80,7 +82,9 @@ main (int argc, char *argv[])
 					goto egress;
 				}
 
-				fprintf (stderr, "have data on GPIO #%d (%c)\n", gpio_id[i], buff[0]);
+				fprintf (stderr, "have data on GPIO #%d (%d)\n", gpio_id[i], buff[0] - '0');
+
+				pin_state ^= (-(buff[0] - '0') ^ pin_state) & (1 << (gpio_id[i]));
 
 				/* Set file pointer back to the beginning. */
 				if ( lseek (fds[i].fd, 0, SEEK_SET) == -1 ){
@@ -89,13 +93,9 @@ main (int argc, char *argv[])
 					goto egress;
 				}
 			}
-
-			if ( fds[i].revents & POLLERR ){
-				fprintf (stderr, "have an error on GPIO #%d\n", gpio_id[i]);
-				ret = EXIT_FAILURE;
-				goto egress;
-			}
 		}
+
+		fprintf (stderr, "PINSTATE: %08x\n", pin_state);
 	}
 
 egress:
