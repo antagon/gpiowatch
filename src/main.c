@@ -1,3 +1,11 @@
+/*
+ * main.c -- gpiowatch main program.
+ *
+ * Copyright (C) 2017 CodeWard.org
+ *
+ * This software may be modified and distributed under the terms
+ * of the MIT license.  See the LICENSE file for details.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,7 +21,7 @@ int
 main (int argc, char *argv[])
 {
 	char buff[16];
-	char gpio_id[] = { 2, 3, 4 };
+	char gpio_id[] = { 2, 3, 4, 17, 18, 27, 22, 23, 24, 10, 9, 11, 25, 8, 7, 5, 6, 13, 19, 26, 12, 16, 20, 21 };
 	struct pollfd fds[sizeof (gpio_id) / sizeof (gpio_id[0])];
 	int ret, i, pollres;
 
@@ -44,6 +52,8 @@ main (int argc, char *argv[])
 	}
 
 	for ( ;; ){
+		fprintf (stderr, "waiting for data...\n");
+
 		pollres = poll (fds, sizeof (fds) / sizeof (fds[0]), -1);
 
 		switch ( pollres ){
@@ -64,7 +74,7 @@ main (int argc, char *argv[])
 					goto egress;
 				}
 
-				fprintf (stderr, "data -> %s...\n", buff);
+				fprintf (stderr, "have data on GPIO #%d (%c)\n", gpio_id[i], buff[0]);
 			}
 		}
 	}
