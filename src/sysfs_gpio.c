@@ -79,7 +79,7 @@ sysfs_gpio_set_direction (int gpio, int direction)
 	if ( fd == -1 )
 		return -1;
 
-	len = snprintf (buff, sizeof (buff), "%s", (direction) ? "out":"in");
+	len = snprintf (buff, sizeof (buff), "%s", (direction == GPIO_DOUT) ? "out":"in");
 
 	if ( write (fd, buff, len) == -1 ){
 		ret = -1;
