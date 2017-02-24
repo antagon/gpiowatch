@@ -36,8 +36,11 @@ isterminator (char sym)
 	return (sym == ';');
 }
 
+#define CONFIG_ESTRNUMTOOBIG "pin number is too large"
+#define CONFIG_ESTRINVALIDCHAR "unexpected character"
+
 static int
-parse_line (const char *line, struct config_entry *entry, struct config_err *error)
+parse_line (const char *line, struct config_entry *entry, struct config_error *error)
 {
 	size_t i, len, ret;
 	int step, digit;
@@ -69,8 +72,19 @@ parse_line (const char *line, struct config_entry *entry, struct config_err *err
 				} else if ( isterminator (line[i]) ){
 					step = PARSE_THRSHLD;
 				} else {
-					if ( error != NULL )
+					if ( error != NULL ){
 						error->echr = ret + 1;
+						error->errmsg = CONFIG_ESTRINVALIDCHAR;
+					}
+					ret = -1;
+					goto egress;
+				}
+
+				if ( digit > 32 ){
+					if ( error != NULL ){
+						error->echr = ret + 1;
+						error->errmsg = CONFIG_ESTRNUMTOOBIG;
+					}
 					ret = -1;
 					goto egress;
 				}
@@ -87,8 +101,10 @@ parse_line (const char *line, struct config_entry *entry, struct config_err *err
 				} else if ( isterminator (line[i]) ){
 					step = PARSE_CMD;
 				} else {
-					if ( error != NULL )
+					if ( error != NULL ){
 						error->echr = ret + 1;
+						error->errmsg = CONFIG_ESTRINVALIDCHAR;
+					}
 					ret = -1;
 					goto egress;
 				}
@@ -114,25 +130,31 @@ egress:
 }
 
 int
-config_parse (const char *path, struct config_entry **config, struct config_err *error)
+config_parse (const char *path, struct config_entry **config, struct config_error *error)
 {
 	FILE *file;
 	char buff[CONFIG_LINE_MAXLEN];
 	struct config_entry parsed;
+	size_t ln;
 	int ret;
 
+	ret = 0;
+	ln = 0;
 	file = fopen (path, "r");
 
 	if ( file == NULL )
 		return -1;
 
 	while ( fgets (buff, sizeof (buff), file) ){
+		ln += 1;
+
 		// Remove the newline character
 		if ( buff[strlen (buff) - 1] == '\n' || buff[strlen (buff) - 1] == '\r' )
 			buff[strlen (buff) - 1] = '\0';
 
 		switch ( parse_line (buff, &parsed, error) ){
 			case -1:
+				error->eline = ln;
 				ret = -1;
 				goto egress;
 
@@ -141,7 +163,7 @@ config_parse (const char *path, struct config_entry **config, struct config_err 
 				break;
 
 			default:
-				fprintf (stderr, "%s\nMASK: %08x, THRESHOLD: %d, CMD: %s\n", buff, parsed.pin_mask, parsed.threshold_sec, parsed.cmd);
+				//fprintf (stderr, "%s\nMASK: %08x, THRESHOLD: %d, CMD: %s\n", buff, parsed.pin_mask, parsed.threshold_sec, parsed.cmd);
 				break;
 		}
 	}

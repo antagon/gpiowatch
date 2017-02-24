@@ -14,10 +14,11 @@
 #define CONFIG_LINE_MAXLEN 1024
 #define CONFIG_CMD_MAXLEN 256
 
-struct config_err
+struct config_error
 {
 	uint32_t echr;
 	uint32_t eline;
+	const char *errmsg;
 };
 
 struct config_entry
@@ -28,7 +29,7 @@ struct config_entry
 	char cmd[CONFIG_CMD_MAXLEN];
 };
 
-extern int config_parse (const char *path, struct config_entry **config, struct config_err *error);
+extern int config_parse (const char *path, struct config_entry **config, struct config_error *error);
 
 #endif
 
