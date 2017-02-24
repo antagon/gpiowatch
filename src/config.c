@@ -7,6 +7,7 @@
  * of the MIT license.  See the LICENSE file for details.
  */
 #include <stdio.h>
+#include <errno.h>
 #include <ctype.h>
 #include <string.h>
 
@@ -134,10 +135,13 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 {
 	FILE *file;
 	char buff[CONFIG_LINE_MAXLEN];
-	struct config_entry parsed;
+	struct config_entry *new_mem, *last_mem;
 	size_t ln;
 	int ret;
 
+	*config = NULL;
+	last_mem = NULL;
+	new_mem = NULL;
 	ret = 0;
 	ln = 0;
 	file = fopen (path, "r");
@@ -148,11 +152,20 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 	while ( fgets (buff, sizeof (buff), file) ){
 		ln += 1;
 
+		if ( new_mem == NULL ){
+			new_mem = (struct config_entry*) calloc (1, sizeof (struct config_entry));
+
+			if ( new_mem == NULL ){
+				ret = -1;
+				goto egress;
+			}
+		}
+
 		// Remove the newline character
 		if ( buff[strlen (buff) - 1] == '\n' || buff[strlen (buff) - 1] == '\r' )
 			buff[strlen (buff) - 1] = '\0';
 
-		switch ( parse_line (buff, &parsed, error) ){
+		switch ( parse_line (buff, new_mem, error) ){
 			case -1:
 				error->eline = ln;
 				ret = -1;
@@ -160,12 +173,22 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 
 			case 0:
 				/* Nothing parsed. */
-				break;
+				continue;
 
 			default:
 				//fprintf (stderr, "%s\nMASK: %08x, THRESHOLD: %d, CMD: %s\n", buff, parsed.pin_mask, parsed.threshold_sec, parsed.cmd);
 				break;
 		}
+
+		if ( *config == NULL ){
+			*config = new_mem;
+			last_mem = new_mem;
+		} else {
+			last_mem->next = new_mem;
+			last_mem = last_mem->next;
+		}
+
+		new_mem = NULL;
 	}
 
 	if ( ferror (file) ){

@@ -27,9 +27,12 @@ struct config_entry
 	uint8_t threshold_sec;
 	uint8_t cmd_len;
 	char cmd[CONFIG_CMD_MAXLEN];
+	struct config_entry *next;
 };
 
 extern int config_parse (const char *path, struct config_entry **config, struct config_error *error);
+
+extern void config_free (struct config_entry *config);
 
 #endif
 
