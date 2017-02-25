@@ -81,7 +81,7 @@ parse_line (const char *line, struct config_entry *entry, struct config_error *e
 					goto egress;
 				}
 
-				if ( digit > 32 ){
+				if ( digit > 31 ){
 					if ( error != NULL ){
 						error->echr = ret + 1;
 						error->errmsg = CONFIG_ESTRNUMTOOBIG;
