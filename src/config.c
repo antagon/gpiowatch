@@ -111,6 +111,14 @@ parse_line (const char *line, struct config_entry *entry, struct config_error *e
 					goto egress;
 				}
 
+				if ( digit > 255 ){
+					if ( error != NULL ){
+						error->echr = ret + 1;
+						error->errmsg = CONFIG_ESTRNUMTOOBIG;
+					}
+					ret = -1;
+					goto egress;
+				}
 				entry->threshold_sec = digit;
 				break;
 
