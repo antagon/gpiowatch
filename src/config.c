@@ -7,6 +7,7 @@
  * of the MIT license.  See the LICENSE file for details.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <ctype.h>
 #include <string.h>
@@ -136,12 +137,12 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 	FILE *file;
 	char buff[CONFIG_LINE_MAXLEN];
 	struct config_entry *new_mem, *last_mem;
+	struct config_entry parsed;
 	size_t ln;
 	int ret;
 
 	*config = NULL;
 	last_mem = NULL;
-	new_mem = NULL;
 	ret = 0;
 	ln = 0;
 	file = fopen (path, "r");
@@ -152,20 +153,11 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 	while ( fgets (buff, sizeof (buff), file) ){
 		ln += 1;
 
-		if ( new_mem == NULL ){
-			new_mem = (struct config_entry*) calloc (1, sizeof (struct config_entry));
-
-			if ( new_mem == NULL ){
-				ret = -1;
-				goto egress;
-			}
-		}
-
 		// Remove the newline character
 		if ( buff[strlen (buff) - 1] == '\n' || buff[strlen (buff) - 1] == '\r' )
 			buff[strlen (buff) - 1] = '\0';
 
-		switch ( parse_line (buff, new_mem, error) ){
+		switch ( parse_line (buff, &parsed, error) ){
 			case -1:
 				error->eline = ln;
 				ret = -1;
@@ -180,6 +172,15 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 				break;
 		}
 
+		new_mem = (struct config_entry*) malloc (sizeof (struct config_entry));
+
+		if ( new_mem == NULL ){
+			ret = -1;
+			goto egress;
+		}
+
+		memcpy (new_mem, &parsed, sizeof (struct config_entry));
+
 		if ( *config == NULL ){
 			*config = new_mem;
 			last_mem = new_mem;
@@ -187,8 +188,6 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 			last_mem->next = new_mem;
 			last_mem = last_mem->next;
 		}
-
-		new_mem = NULL;
 	}
 
 	if ( ferror (file) ){
@@ -200,5 +199,19 @@ egress:
 	fclose (file);
 
 	return ret;
+}
+
+void
+config_free (struct config_entry *config)
+{
+	struct config_entry *config_iter, *config_iter_next;
+
+	config_iter = config;
+
+	while ( config_iter != NULL ){
+		config_iter_next = config_iter->next;
+		free (config_iter);
+		config_iter = config_iter_next;
+	}
 }
 
