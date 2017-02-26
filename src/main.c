@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
@@ -18,57 +19,133 @@
 #include <unistd.h>
 
 #include "sysfs_gpio.h"
+#include "config.h"
+
+static int sigexitloop = 0;
+
+static void
+interrupt (int signo)
+{
+	sigexitloop = signo;
+}
+
+#define GPIOWATCH_VERSION "0.1"
+
+static void
+version (const char *p)
+{
+	fprintf (stdout, "%s %s\n", p, GPIOWATCH_VERSION);
+}
+
+static void
+usage (const char *p)
+{
+	fprintf (stdout, "Usage: %s -c <config-file>\n\n\
+Options:\n\
+ -v  show version information\n\
+ -h  show usage information\n", p);
+}
 
 int
 main (int argc, char *argv[])
 {
 	char buff[16];
-	char gpio_id[] = { 17, 27, 22, 18, 23, 24, 25, 5, 6, 13, 19, 26, 12, 16, 20, 21 };
-	struct pollfd fds[sizeof (gpio_id) / sizeof (gpio_id[0])];
-	uint32_t pin_state;
+	const char *conf_path;
+	struct config_entry *config, *config_iter;
+	struct config_error config_err;
+	struct pollfd fds[32];
+	uint32_t pin_state, bit;
 	int ret, i, pollres;
 
 	ret = EXIT_SUCCESS;
 	pin_state = 0;
+	conf_path = NULL;
+	config = NULL;
 
-	for ( i = 0; i < sizeof (gpio_id) / sizeof (gpio_id[0]); i++ ){
-		if ( sysfs_gpio_export (gpio_id[i]) == -1 ){
-			fprintf (stderr, "cannot export GPIO (%d) interface: %s\n", gpio_id[i], strerror (errno));
-			ret = EXIT_FAILURE;
-			goto egress;
-		}
+	signal (SIGTERM, interrupt);
+	signal (SIGINT, interrupt);
 
-		if ( sysfs_gpio_set_direction (gpio_id[i], GPIO_DIN) == -1 ){
-			fprintf (stderr, "cannot enable GPIO (%d) (INPUT mode): %s\n", gpio_id[i], strerror (errno));
-			ret = EXIT_FAILURE;
-			goto egress;
-		}
+	while ( (i = getopt (argc, argv, "c:vh")) != -1 ){
+		switch ( i ){
+			case 'c':
+				conf_path = optarg;
+				break;
 
-		if ( sysfs_gpio_set_edge (gpio_id[i], GPIO_EDGBOTH) == -1 ){
-			fprintf (stderr, "cannot set edge for GPIO (%d): %s\n", gpio_id[i], strerror (errno));
-			ret = EXIT_FAILURE;
-			goto egress;
-		}
+			case 'v':
+				version (argv[0]);
+				ret = EXIT_SUCCESS;
+				goto egress;
 
-		fds[i].events = POLLPRI;
-		fds[i].revents = 0;
-		fds[i].fd = sysfs_gpio_open (gpio_id[i]);
-
-		if ( fds[i].fd == -1 ){
-			fprintf (stderr, "cannot read from GPIO (%d) interface: %s\n", gpio_id[i], strerror (errno));
-			ret = EXIT_FAILURE;
-			goto egress;
+			case 'h':
+				usage (argv[0]);
+				ret = EXIT_SUCCESS;
+				goto egress;
 		}
 	}
 
-	for ( ;; ){
+	if ( conf_path == NULL ){
+		fprintf (stderr, "%s: no configuration file. Try `%s -h` for more information.\n", argv[0], argv[0]);
+		ret = EXIT_FAILURE;
+		goto egress;
+	}
+
+	if ( config_parse (conf_path, &config, &config_err) == -1 ){
+		fprintf (stderr, "%s: %s in '%s' on line %d, near character no. %d\n", argv[0], config_err.errmsg, conf_path, config_err.eline, config_err.echr);
+		ret = EXIT_FAILURE;
+		goto egress;
+	}
+
+	for ( i = 0; i < sizeof (fds) / sizeof (fds[0]); i++ ){
+		bit = (uint32_t) pow (2, i);
+
+		fds[i].events = POLLPRI;
+		fds[i].revents = 0;
+		fds[i].fd = -1;
+
+		for ( config_iter = config; config_iter != NULL; config_iter = config_iter->next ){
+			if ( config_iter->pin_mask & bit ){
+				if ( sysfs_gpio_export (i) == -1 ){
+					fprintf (stderr, "cannot export GPIO (%d) interface: %s\n", i, strerror (errno));
+					ret = EXIT_FAILURE;
+					goto cleanup;
+				}
+
+				if ( sysfs_gpio_set_direction (i, GPIO_DIN) == -1 ){
+					fprintf (stderr, "cannot enable GPIO (%d) (INPUT mode): %s\n", i, strerror (errno));
+					ret = EXIT_FAILURE;
+					goto cleanup;
+				}
+
+				if ( sysfs_gpio_set_edge (i, GPIO_EDGBOTH) == -1 ){
+					fprintf (stderr, "cannot set edge for GPIO (%d): %s\n", i, strerror (errno));
+					ret = EXIT_FAILURE;
+					goto cleanup;
+				}
+
+				fds[i].fd = sysfs_gpio_open (i);
+
+				if ( fds[i].fd == -1 ){
+					fprintf (stderr, "cannot read from GPIO (%d) interface: %s\n", i, strerror (errno));
+					ret = EXIT_FAILURE;
+					goto cleanup;
+				}
+				break;
+			}
+		}
+	}
+
+	while ( ! sigexitloop ){
+		fprintf (stderr, "waiting for data...\n");
 		pollres = poll (fds, sizeof (fds) / sizeof (fds[0]), 1000);
 
 		switch ( pollres ){
 			case -1:
+				if ( errno == EINTR )
+					continue;
+
 				fprintf (stderr, "poll failed: %s\n", strerror (errno));
 				ret = EXIT_FAILURE;
-				goto egress;
+				goto cleanup;
 
 			case 0:
 				continue;
@@ -79,18 +156,18 @@ main (int argc, char *argv[])
 				if ( read (fds[i].fd, buff, sizeof (buff)) == -1 ){
 					fprintf (stderr, "read failed: %s\n", strerror (errno));
 					ret = EXIT_FAILURE;
-					goto egress;
+					goto cleanup;
 				}
 
-				fprintf (stderr, "have data on GPIO #%d (%d)\n", gpio_id[i], buff[0] - '0');
+				fprintf (stderr, "have data on GPIO #%d (%d)\n", i, buff[0] - '0');
 
-				pin_state ^= (-(buff[0] - '0') ^ pin_state) & (1 << (gpio_id[i]));
+				pin_state ^= (-(buff[0] - '0') ^ pin_state) & (1 << (i));
 
 				/* Set file pointer back to the beginning. */
 				if ( lseek (fds[i].fd, 0, SEEK_SET) == -1 ){
 					fprintf (stderr, "lseek failed: %s\n", strerror (errno));
 					ret = EXIT_FAILURE;
-					goto egress;
+					goto cleanup;
 				}
 			}
 		}
@@ -98,15 +175,25 @@ main (int argc, char *argv[])
 		fprintf (stderr, "PINSTATE: %08x\n", pin_state);
 	}
 
-egress:
-	for ( i = 0; i < sizeof (gpio_id) / sizeof (gpio_id[0]); i++ ){
-		if ( sysfs_gpio_unexport (gpio_id[i]) == -1 ){
+cleanup:
+	for ( i = 0; i < sizeof (fds) / sizeof (fds[0]); i++ ){
+		if ( fds[i].fd == -1 )
+			continue;
+
+		if ( close (fds[i].fd) == -1 ){
+			fprintf (stderr, "cannot close GPIO (%d) interface: %s\n", i, strerror (errno));
 			ret = EXIT_FAILURE;
+			continue;
 		}
 
-		if ( fds[i].fd != -1 )
-			close (fds[i].fd);
+		if ( sysfs_gpio_unexport (i) == -1 ){
+			fprintf (stderr, "cannot unexport GPIO (%d) interface: %s\n", i, strerror (errno));
+			ret = EXIT_FAILURE;
+		}
 	}
+
+egress:
+	config_free (config);
 
 	return ret;
 }
