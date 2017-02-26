@@ -108,19 +108,19 @@ main (int argc, char *argv[])
 		for ( config_iter = config; config_iter != NULL; config_iter = config_iter->next ){
 			if ( config_iter->pin_mask & bit ){
 				if ( sysfs_gpio_export (i) == -1 ){
-					fprintf (stderr, "cannot export GPIO (%d) interface: %s\n", i, strerror (errno));
+					fprintf (stderr, "%s: cannot export GPIO%d interface: %s\n", argv[0], i, strerror (errno));
 					ret = EXIT_FAILURE;
 					goto egress;
 				}
 
 				if ( sysfs_gpio_set_direction (i, GPIO_DIN) == -1 ){
-					fprintf (stderr, "cannot enable GPIO (%d) (INPUT mode): %s\n", i, strerror (errno));
+					fprintf (stderr, "%s: cannot set direction of GPIO%d interface: %s\n", argv[0], i, strerror (errno));
 					ret = EXIT_FAILURE;
 					goto egress;
 				}
 
 				if ( sysfs_gpio_set_edge (i, GPIO_EDGBOTH) == -1 ){
-					fprintf (stderr, "cannot set edge for GPIO (%d): %s\n", i, strerror (errno));
+					fprintf (stderr, "%s: cannot set edge for GPIO%d interface: %s\n", argv[0], i, strerror (errno));
 					ret = EXIT_FAILURE;
 					goto egress;
 				}
@@ -128,7 +128,7 @@ main (int argc, char *argv[])
 				fds[i].fd = sysfs_gpio_open (i);
 
 				if ( fds[i].fd == -1 ){
-					fprintf (stderr, "cannot read from GPIO (%d) interface: %s\n", i, strerror (errno));
+					fprintf (stderr, "%s: cannot read from GPIO%d interface: %s\n", argv[0], i, strerror (errno));
 					ret = EXIT_FAILURE;
 					goto egress;
 				}
@@ -137,15 +137,16 @@ main (int argc, char *argv[])
 		}
 	}
 
+	openlog (argv[0], LOG_NDELAY | LOG_NOWAIT | LOG_PERROR | LOG_PID, LOG_USER);
+
 	while ( ! sigexitloop ){
-		fprintf (stderr, "waiting for data...\n");
 		pollres = poll (fds, sizeof (fds) / sizeof (fds[0]), 1000);
 
 		if ( pollres == -1 ){
 			if ( errno == EINTR )
 				continue;
 
-			fprintf (stderr, "poll failed: %s\n", strerror (errno));
+			syslog (LOG_ERR, "poll failed: %s\n", strerror (errno));
 			ret = EXIT_FAILURE;
 			goto egress;
 		}
@@ -155,7 +156,7 @@ main (int argc, char *argv[])
 			for ( i = 0; i < sizeof (fds) / sizeof (fds[0]); i++ ){
 				if ( fds[i].revents & POLLPRI ){
 					if ( read (fds[i].fd, buff, sizeof (buff)) == -1 ){
-						fprintf (stderr, "read failed: %s\n", strerror (errno));
+						syslog (LOG_ERR, "reading from a file failed: %s\n", strerror (errno));
 						ret = EXIT_FAILURE;
 						goto egress;
 					}
@@ -166,7 +167,7 @@ main (int argc, char *argv[])
 
 					/* Set file pointer back to the beginning. */
 					if ( lseek (fds[i].fd, 0, SEEK_SET) == -1 ){
-						fprintf (stderr, "lseek failed: %s\n", strerror (errno));
+						syslog (LOG_ERR, "lseek failed: %s\n", strerror (errno));
 						ret = EXIT_FAILURE;
 						goto egress;
 					}
@@ -188,14 +189,15 @@ egress:
 			continue;
 
 		if ( close (fds[i].fd) == -1 ){
-			fprintf (stderr, "cannot close GPIO (%d) interface: %s\n", i, strerror (errno));
+			syslog (LOG_WARNING, "cannot close GPIO%d interface: %s\n", i, strerror (errno));
 			ret = EXIT_FAILURE;
 			continue;
 		}
 
 		if ( sysfs_gpio_unexport (i) == -1 ){
-			fprintf (stderr, "cannot unexport GPIO (%d) interface: %s\n", i, strerror (errno));
+			syslog (LOG_WARNING, "cannot unexport GPIO%d interface: %s\n", i, strerror (errno));
 			ret = EXIT_FAILURE;
+			continue;
 		}
 	}
 
