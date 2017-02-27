@@ -1,9 +1,8 @@
 ## Usage
 
-	./gpiowatch [options] -c <config-file>
+	Usage: gpiowatch -c <config-file>
 
-	Options
-	 -c <config-file> read configuration from <config-file>
-	 -p <pid-file> create a pid file <pid-file>
-	 -v version information
+	Options:
+	 -v  show version information
+	 -h  show usage information
 
