@@ -45,7 +45,7 @@ sysfs_gpio_do (int gpio, int what)
 	}
 
 	/* Wait a second so the kernel has time to setup everything. */
-	if ( GPIO_EXPORT )
+	if ( what == GPIO_EXPORT )
 		sleep (1);
 
 egress:
