@@ -44,6 +44,10 @@ sysfs_gpio_do (int gpio, int what)
 		goto egress;
 	}
 
+	/* Wait a second so the kernel has time to setup everything. */
+	if ( GPIO_EXPORT )
+		sleep (1);
+
 egress:
 	close (fd);
 
