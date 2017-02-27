@@ -53,7 +53,7 @@ egress:
 int
 sysfs_gpio_init (void)
 {
-	return access ("/sys/class/gpio/export", X_OK);
+	return access ("/sys/class/gpio/export", F_OK);
 }
 
 int
