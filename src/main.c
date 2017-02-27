@@ -13,6 +13,7 @@
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
+#include <sys/time.h>
 #include <poll.h>
 #include <syslog.h>
 #include <getopt.h>
@@ -42,35 +43,34 @@ usage (const char *p)
 {
 	fprintf (stdout, "Usage: %s -c <config-file>\n\n\
 Options:\n\
- -v  show version information\n\
- -h  show usage information\n", p);
+ -c <file> load a configuration file\n\
+ -v        show version information\n\
+ -h        show usage information\n", p);
 }
+
+static void
+trigger_alarm (int signo) { return; }
 
 int
 main (int argc, char *argv[])
 {
-	char buff[16];
+	char buff[4];
 	const char *conf_path;
+	struct itimerval timer;
 	struct config_entry *config, *config_iter;
 	struct config_error config_err;
 	struct pollfd fds[32];
-	uint32_t pin_state, bit;
+	uint32_t pin_state, bit_weight;
 	int ret, i, pollres;
 
-	ret = EXIT_SUCCESS;
-	pin_state = 0;
-	conf_path = NULL;
 	config = NULL;
-
-	/* Init the pollfd structure */
-	for ( i = 0; i < sizeof (fds) / sizeof (fds[0]); i++ ){
-		fds[i].events = POLLPRI;
-		fds[i].revents = 0;
-		fds[i].fd = -1;
-	}
+	ret = EXIT_SUCCESS;
+	conf_path = NULL;
+	pin_state = 0;
 
 	signal (SIGTERM, interrupt);
 	signal (SIGINT, interrupt);
+	signal (SIGALRM, trigger_alarm);
 
 	while ( (i = getopt (argc, argv, "c:vh")) != -1 ){
 		switch ( i ){
@@ -81,14 +81,23 @@ main (int argc, char *argv[])
 			case 'v':
 				version (argv[0]);
 				ret = EXIT_SUCCESS;
-				goto egress;
+				return ret;
 
 			case 'h':
 				usage (argv[0]);
 				ret = EXIT_SUCCESS;
-				goto egress;
+				return ret;
 		}
 	}
+
+	/* Init the pollfd structure */
+	for ( i = 0; i < sizeof (fds) / sizeof (fds[0]); i++ ){
+		fds[i].events = POLLPRI;
+		fds[i].revents = 0;
+		fds[i].fd = -1;
+	}
+
+	openlog (argv[0], LOG_NDELAY | LOG_NOWAIT | LOG_PERROR | LOG_PID, LOG_USER);
 
 	if ( conf_path == NULL ){
 		fprintf (stderr, "%s: no configuration file. Try `%s -h` for more information.\n", argv[0], argv[0]);
@@ -97,30 +106,39 @@ main (int argc, char *argv[])
 	}
 
 	if ( config_parse (conf_path, &config, &config_err) == -1 ){
-		fprintf (stderr, "%s: %s in '%s' on line %d, near character no. %d\n", argv[0], config_err.errmsg, conf_path, config_err.eline, config_err.echr);
+		if ( errno )
+			fprintf (stderr, "%s: cannot read configuration file '%s': %s\n", argv[0], conf_path, strerror (errno));
+		else
+			fprintf (stderr, "%s: %s in '%s' on line %d, near character no. %d\n", argv[0], config_err.errmsg, conf_path, config_err.eline, config_err.echr);
 		ret = EXIT_FAILURE;
 		goto egress;
 	}
 
+	if ( sysfs_gpio_init () == -1 ){
+		fprintf (stderr, "%s: sysfs interface for GPIO does not exist\n", argv[0]);
+		ret = EXIT_FAILURE;
+		return ret;
+	}
+
 	for ( i = 0; i < sizeof (fds) / sizeof (fds[0]); i++ ){
-		bit = (uint32_t) pow (2, i);
+		bit_weight = (uint32_t) pow (2, i);
 
 		for ( config_iter = config; config_iter != NULL; config_iter = config_iter->next ){
-			if ( config_iter->pin_mask & bit ){
+			if ( config_iter->pin_mask & bit_weight ){
 				if ( sysfs_gpio_export (i) == -1 ){
-					fprintf (stderr, "%s: cannot export GPIO%d interface: %s\n", argv[0], i, strerror (errno));
+					fprintf (stderr, "%s: cannot export GPIO-%d interface: %s\n", argv[0], i, strerror (errno));
 					ret = EXIT_FAILURE;
 					goto egress;
 				}
 
 				if ( sysfs_gpio_set_direction (i, GPIO_DIN) == -1 ){
-					fprintf (stderr, "%s: cannot set direction of GPIO%d interface: %s\n", argv[0], i, strerror (errno));
+					fprintf (stderr, "%s: cannot set direction of GPIO-%d interface: %s\n", argv[0], i, strerror (errno));
 					ret = EXIT_FAILURE;
 					goto egress;
 				}
 
 				if ( sysfs_gpio_set_edge (i, GPIO_EDGBOTH) == -1 ){
-					fprintf (stderr, "%s: cannot set edge for GPIO%d interface: %s\n", argv[0], i, strerror (errno));
+					fprintf (stderr, "%s: cannot set edge for GPIO-%d interface: %s\n", argv[0], i, strerror (errno));
 					ret = EXIT_FAILURE;
 					goto egress;
 				}
@@ -128,7 +146,7 @@ main (int argc, char *argv[])
 				fds[i].fd = sysfs_gpio_open (i);
 
 				if ( fds[i].fd == -1 ){
-					fprintf (stderr, "%s: cannot read from GPIO%d interface: %s\n", argv[0], i, strerror (errno));
+					fprintf (stderr, "%s: cannot read from GPIO-%d interface: %s\n", argv[0], i, strerror (errno));
 					ret = EXIT_FAILURE;
 					goto egress;
 				}
@@ -137,16 +155,45 @@ main (int argc, char *argv[])
 		}
 	}
 
-	openlog (argv[0], LOG_NDELAY | LOG_NOWAIT | LOG_PERROR | LOG_PID, LOG_USER);
+	// Set timer
+	timer.it_interval.tv_sec = 0;
+	timer.it_interval.tv_usec = 900000;
+	timer.it_value.tv_sec = 0;
+	timer.it_value.tv_usec = 1;
+
+	if ( setitimer (ITIMER_REAL, &timer, NULL) == -1 ){
+		fprintf (stderr, "%s: cannot set interval timer: %s\n", argv[0], strerror (errno));
+		ret = EXIT_FAILURE;
+		goto egress;
+	}
+
+	syslog (LOG_INFO, "Started listening events on GPIO pins");
 
 	while ( ! sigexitloop ){
-		pollres = poll (fds, sizeof (fds) / sizeof (fds[0]), 1000);
+		pollres = poll (fds, sizeof (fds) / sizeof (fds[0]), -1);
 
 		if ( pollres == -1 ){
-			if ( errno == EINTR )
-				continue;
+			if ( errno == EINTR ){
+				/* Compare whether state of pins matches a configured pin mask. */
+				for ( config_iter = config; pin_state != 0x00 && config_iter != NULL; config_iter = config_iter->next ){
+					/* Skip any that do not match the current pin state mask. */
+					if ( (config_iter->pin_mask & pin_state) != config_iter->pin_mask ){
+						config_iter->state.threshold = 0;
+						continue;
+					}
 
-			syslog (LOG_ERR, "poll failed: %s\n", strerror (errno));
+					if ( config_iter->state.threshold == config_iter->threshold_sec ){
+						fprintf (stderr, "EXEC %s\n", config_iter->cmd);
+						// TODO: vvv--- fork and other shenanigans will follow ---vvv
+					}
+
+					// FIXME: possible integer overflow!
+					config_iter->state.threshold += 1;
+				}
+				continue;
+			}
+
+			syslog (LOG_ERR, "poll error: %s\n", strerror (errno));
 			ret = EXIT_FAILURE;
 			goto egress;
 		}
@@ -155,33 +202,28 @@ main (int argc, char *argv[])
 			/* Read input from GPIO pins. */
 			for ( i = 0; i < sizeof (fds) / sizeof (fds[0]); i++ ){
 				if ( fds[i].revents & POLLPRI ){
+					uint8_t boolval;
+
 					if ( read (fds[i].fd, buff, sizeof (buff)) == -1 ){
 						syslog (LOG_ERR, "reading from a file failed: %s\n", strerror (errno));
 						ret = EXIT_FAILURE;
 						goto egress;
 					}
 
-					fprintf (stderr, "have data on GPIO #%d (%d)\n", i, buff[0] - '0');
-
-					pin_state ^= (-(buff[0] - '0') ^ pin_state) & (1 << (i));
-
-					/* Set file pointer back to the beginning. */
 					if ( lseek (fds[i].fd, 0, SEEK_SET) == -1 ){
-						syslog (LOG_ERR, "lseek failed: %s\n", strerror (errno));
+						syslog (LOG_ERR, "lseek error: %s\n", strerror (errno));
 						ret = EXIT_FAILURE;
 						goto egress;
 					}
+
+					boolval = (buff[0] - '0') ? 1:0;
+					pin_state ^= (-boolval ^ pin_state) & (1 << (i));
 				}
 			}
 		}
-
-		/* Compare whether state of pins matches a configured pin mask. */
-		for ( config_iter = config; pin_state != 0x00 && config_iter != NULL; config_iter = config_iter->next ){
-			if ( (config_iter->pin_mask & pin_state) == config_iter->pin_mask ){
-				fprintf (stderr, "RUNNING: %s\n", config_iter->cmd);
-			}
-		}
 	}
+
+	syslog (LOG_NOTICE, "Stopped listening events on GPIO pins (killed with signal %d)", sigexitloop);
 
 egress:
 	for ( i = 0; i < sizeof (fds) / sizeof (fds[0]); i++ ){
@@ -189,13 +231,13 @@ egress:
 			continue;
 
 		if ( close (fds[i].fd) == -1 ){
-			syslog (LOG_WARNING, "cannot close GPIO%d interface: %s\n", i, strerror (errno));
+			syslog (LOG_WARNING, "cannot close GPIO-%d interface: %s\n", i, strerror (errno));
 			ret = EXIT_FAILURE;
 			continue;
 		}
 
 		if ( sysfs_gpio_unexport (i) == -1 ){
-			syslog (LOG_WARNING, "cannot unexport GPIO%d interface: %s\n", i, strerror (errno));
+			syslog (LOG_WARNING, "cannot unexport GPIO-%d interface: %s\n", i, strerror (errno));
 			ret = EXIT_FAILURE;
 			continue;
 		}
@@ -203,6 +245,8 @@ egress:
 
 	config_free (config);
 
-	return ret;
+	closelog ();
+
+	return (sigexitloop) ? sigexitloop:ret;
 }
 
