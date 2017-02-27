@@ -23,6 +23,8 @@ enum
 	GPIO_EDGBOTH = 3
 };
 
+extern int sysfs_gpio_init (void);
+
 extern int sysfs_gpio_export (int gpio);
 
 extern int sysfs_gpio_unexport (int gpio);

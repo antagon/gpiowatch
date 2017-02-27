@@ -51,6 +51,12 @@ egress:
 }
 
 int
+sysfs_gpio_init (void)
+{
+	return access ("/sys/class/gpio/export", X_OK);
+}
+
+int
 sysfs_gpio_export (int gpio)
 {
 	return sysfs_gpio_do (gpio, GPIO_EXPORT);
@@ -152,7 +158,7 @@ sysfs_gpio_open (int gpio)
 
 	snprintf (path, sizeof (path), "/sys/class/gpio/gpio%d/value", gpio);
 
-	fd = open (path, O_RDONLY | O_NDELAY);
+	fd = open (path, O_RDONLY | O_NONBLOCK);
 
 	return fd;
 }
