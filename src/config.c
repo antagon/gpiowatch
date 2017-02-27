@@ -176,7 +176,6 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 				continue;
 
 			default:
-				//fprintf (stderr, "%s\nMASK: %08x, THRESHOLD: %d, CMD: %s\n", buff, parsed.pin_mask, parsed.threshold_sec, parsed.cmd);
 				break;
 		}
 

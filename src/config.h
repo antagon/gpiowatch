@@ -21,12 +21,21 @@ struct config_error
 	const char *errmsg;
 };
 
+/* This structure has very little to do with a configuration. However, to have
+ * this structure embedded in the configuration structure makes the task of
+ * accessing/maintaining current states easiest. */
+struct noconfig_state
+{
+	uint8_t threshold;
+};
+
 struct config_entry
 {
 	uint32_t pin_mask;
 	uint8_t threshold_sec;
 	uint8_t cmd_len;
 	char cmd[CONFIG_CMD_MAXLEN];
+	struct noconfig_state state;
 	struct config_entry *next;
 };
 
