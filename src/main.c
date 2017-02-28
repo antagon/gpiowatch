@@ -60,17 +60,19 @@ main (int argc, char *argv[])
 	struct config_entry *config, *config_iter;
 	struct config_error config_err;
 	struct pollfd fds[32];
-	uint32_t pin_state, bit_weight;
-	int ret, i, pollres;
+	uint32_t pin_state, gpioif_open, bit_weight;
+	int ret, i, pollres, forkres;
 
 	config = NULL;
 	ret = EXIT_SUCCESS;
 	conf_path = NULL;
 	pin_state = 0;
+	gpioif_open = 0;
 
 	signal (SIGTERM, interrupt);
 	signal (SIGINT, interrupt);
 	signal (SIGALRM, trigger_alarm);
+	signal (SIGCHLD, SIG_IGN);
 
 	while ( (i = getopt (argc, argv, "c:vh")) != -1 ){
 		switch ( i ){
@@ -131,6 +133,9 @@ main (int argc, char *argv[])
 					goto egress;
 				}
 
+				// Take note of a new interface.
+				gpioif_open ^= (-1 ^ gpioif_open) & (1 << (i));
+
 				if ( sysfs_gpio_set_direction (i, GPIO_DIN) == -1 ){
 					fprintf (stderr, "%s: cannot set direction of GPIO-%d interface: %s\n", argv[0], i, strerror (errno));
 					ret = EXIT_FAILURE;
@@ -183,8 +188,19 @@ main (int argc, char *argv[])
 					}
 
 					if ( config_iter->state.threshold == config_iter->threshold_sec ){
-						fprintf (stderr, "EXEC %s\n", config_iter->cmd);
-						// TODO: vvv--- fork and other shenanigans will follow ---vvv
+						syslog (LOG_INFO, "Running '%s'...", config_iter->cmd);
+
+						forkres = fork ();
+
+						if ( forkres == -1 ){
+							syslog (LOG_ERR, "cannot fork process: %s\n", strerror (errno));
+							ret = EXIT_FAILURE;
+							goto egress;
+						}
+
+						if ( forkres == 0 ){
+							exit (1);
+						}
 					}
 
 					// FIXME: possible integer overflow!
@@ -227,19 +243,21 @@ main (int argc, char *argv[])
 
 egress:
 	for ( i = 0; i < sizeof (fds) / sizeof (fds[0]); i++ ){
-		if ( fds[i].fd == -1 )
+
+		// Check if we have exported this GPIO interface, otherwise ignore it.
+		if ( !((gpioif_open >> i) & 1) )
 			continue;
 
-		if ( close (fds[i].fd) == -1 ){
-			syslog (LOG_WARNING, "cannot close GPIO-%d interface: %s\n", i, strerror (errno));
-			ret = EXIT_FAILURE;
-			continue;
+		if ( fds[i].fd != -1 ){
+			if ( close (fds[i].fd) == -1 ){
+				syslog (LOG_WARNING, "cannot close GPIO-%d interface: %s\n", i, strerror (errno));
+				ret = EXIT_FAILURE;
+			}
 		}
 
 		if ( sysfs_gpio_unexport (i) == -1 ){
 			syslog (LOG_WARNING, "cannot unexport GPIO-%d interface: %s\n", i, strerror (errno));
 			ret = EXIT_FAILURE;
-			continue;
 		}
 	}
 
