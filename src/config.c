@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include <string.h>
+#include <wordexp.h>
 
 #include "config.h"
 
@@ -129,6 +130,9 @@ parse_line (const char *line, struct config_entry *entry, struct config_error *e
 					break;
 				}
 
+				if ( isspace (line[i]) && entry->cmd_len == 0 )
+					continue;
+
 				entry->cmd[entry->cmd_len++] = line[i];
 				entry->cmd[entry->cmd_len] = '\0';
 				break;
@@ -179,6 +183,24 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 				break;
 		}
 
+		// Expand the command
+		switch ( wordexp (parsed.cmd, &(parsed.state.wargv), WRDE_UNDEF) ){
+			case 0:
+				// Success...
+				break;
+
+			// TODO: use different error cases as documented in man 3 wordexp.
+			default:
+				ret = -1;
+				goto egress;
+		}
+
+		if ( parsed.state.wargv.we_wordc == 0 ){
+			fprintf (stderr, "FIXME: remove this line -- we_wordc == 0\n");
+			ret = -1;
+			goto egress;
+		}
+
 		new_mem = (struct config_entry*) malloc (sizeof (struct config_entry));
 
 		if ( new_mem == NULL ){
@@ -217,6 +239,7 @@ config_free (struct config_entry *config)
 
 	while ( config_iter != NULL ){
 		config_iter_next = config_iter->next;
+		wordfree (&(config_iter->state.wargv));
 		free (config_iter);
 		config_iter = config_iter_next;
 	}

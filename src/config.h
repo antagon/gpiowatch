@@ -10,6 +10,7 @@
 #define _CONFIG_H
 
 #include <stdint.h>
+#include <wordexp.h>
 
 #define CONFIG_LINE_MAXLEN 1024
 #define CONFIG_CMD_MAXLEN 256
@@ -26,6 +27,7 @@ struct config_error
  * accessing/maintaining current states easiest. */
 struct noconfig_state
 {
+	wordexp_t wargv;
 	uint8_t threshold;
 };
 
