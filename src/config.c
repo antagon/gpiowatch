@@ -191,7 +191,7 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 		new_mem = (struct config_entry*) malloc (sizeof (struct config_entry));
 
 		if ( new_mem == NULL ){
-			error->eline = ln;
+			error->eline = -1;
 			error->echr = -1;
 			error->errmsg = strerror (errno);
 			ret = -1;
@@ -210,6 +210,9 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 	}
 
 	if ( ferror (file) ){
+		error->eline = -1;
+		error->echr = -1;
+		error->errmsg = strerror (errno);
 		ret = -1;
 		goto egress;
 	}
