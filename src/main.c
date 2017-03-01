@@ -163,8 +163,8 @@ main (int argc, char *argv[])
 	// Set timer
 	timer.it_interval.tv_sec = 0;
 	timer.it_interval.tv_usec = 900000;
-	timer.it_value.tv_sec = 0;
-	timer.it_value.tv_usec = 1;
+	timer.it_value.tv_sec = 1;
+	timer.it_value.tv_usec = 0;
 
 	if ( setitimer (ITIMER_REAL, &timer, NULL) == -1 ){
 		fprintf (stderr, "%s: cannot set interval timer: %s\n", argv[0], strerror (errno));
@@ -187,24 +187,38 @@ main (int argc, char *argv[])
 						continue;
 					}
 
-					if ( config_iter->state.threshold == config_iter->threshold_sec ){
-						syslog (LOG_INFO, "Running '%s'...", config_iter->cmd);
+					config_iter->state.threshold += 1;
 
-						forkres = fork ();
-
-						if ( forkres == -1 ){
-							syslog (LOG_ERR, "cannot fork process: %s\n", strerror (errno));
-							ret = EXIT_FAILURE;
-							goto egress;
-						}
-
-						if ( forkres == 0 ){
-							exit (1);
-						}
+					if ( config_iter->state.threshold > config_iter->threshold_sec ){
+						config_iter->state.threshold = config_iter->threshold_sec;
+						continue;
+					} else if ( config_iter->state.threshold < config_iter->threshold_sec ){
+						continue;
 					}
 
-					// FIXME: possible integer overflow!
-					config_iter->state.threshold += 1;
+					// Threshold has been reach, execute a command...
+					syslog (LOG_INFO, "executing a command '%s'", config_iter->cmd);
+
+					forkres = fork ();
+
+					if ( forkres == -1 ){
+						syslog (LOG_ERR, "cannot fork process: %s", strerror (errno));
+						ret = EXIT_FAILURE;
+						goto egress;
+					}
+
+					if ( forkres == 0 ){
+						fclose (stdout);
+						fclose (stderr);
+
+						// Child process...
+						if ( execvp (config_iter->state.wargv.we_wordv[0],
+										config_iter->state.wargv.we_wordv) == -1 ){
+							syslog (LOG_ERR, "cannot exec a command '%s': %s", config_iter->cmd, strerror (errno));
+							continue;
+						}
+						exit (1);
+					}
 				}
 				continue;
 			}
