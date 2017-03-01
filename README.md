@@ -11,10 +11,17 @@
 
 ## Configuration
 
-	# Wait for GPIO pins 16, 20, 21 to be set to logical 1 (true) for four
-	# consecutive seconds, and execute a command...
-	16 & 20 & 21; 4; echo Running the command (as user $(whoami), via $SHELL)...
-	# ... other commands may follow.
+	# Execute a command if GPIO pins 16, 20, 21 are set to logical 1 (true) for
+	# four consecutive seconds.
+	16 & 20 & 21; 4; echo "Running the command (as user $(whoami), via $SHELL)"
+
+## Compilation
+
+	make
+
+## Dependencies
+
+* glibc
 
 ## License
 
