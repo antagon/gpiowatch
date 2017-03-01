@@ -209,15 +209,13 @@ main (int argc, char *argv[])
 
 					if ( forkres == 0 ){
 						fclose (stdout);
-						fclose (stderr);
 
 						// Child process...
 						if ( execvp (config_iter->state.wargv.we_wordv[0],
 										config_iter->state.wargv.we_wordv) == -1 ){
 							syslog (LOG_ERR, "cannot exec a command '%s': %s", config_iter->cmd, strerror (errno));
-							continue;
+							exit (1);
 						}
-						exit (1);
 					}
 				}
 				continue;
