@@ -38,7 +38,8 @@ isterminator (char sym)
 	return (sym == ';');
 }
 
-#define CONFIG_ESTRNUMTOOBIG "pin number is too large"
+#define CONFIG_ESTRNUMTOOBIG "number is too large"
+#define CONFIG_ESTRNUMTOOSMALL "number is too small"
 #define CONFIG_ESTRINVALIDCHAR "unexpected character"
 
 static int
@@ -118,7 +119,15 @@ parse_line (const char *line, struct config_entry *entry, struct config_error *e
 					}
 					ret = -1;
 					goto egress;
+				} else if ( digit < 1 ){
+					if ( error != NULL ){
+						error->echr = ret + 1;
+						error->errmsg = CONFIG_ESTRNUMTOOSMALL;
+					}
+					ret = -1;
+					goto egress;
 				}
+
 				entry->threshold_sec = digit;
 				break;
 
@@ -141,12 +150,6 @@ parse_line (const char *line, struct config_entry *entry, struct config_error *e
 egress:
 	return ret;
 }
-
-#define CONFIG_ESTRSYNTAX "syntax error"
-#define CONFIG_ESTRBADCHAR "bad character"
-#define CONFIG_ESTRUNDEFVAR "referencing an undefined variable"
-#define CONFIG_ESTRNOMEM "out of memory"
-#define CONFIG_ESTRNOCMD "missing command"
 
 int
 config_parse (const char *path, struct config_entry **config, struct config_error *error)
