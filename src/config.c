@@ -11,7 +11,6 @@
 #include <errno.h>
 #include <ctype.h>
 #include <string.h>
-#include <wordexp.h>
 
 #include "config.h"
 
@@ -189,49 +188,6 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 				break;
 		}
 
-		// Expand the command
-		switch ( wordexp (parsed.cmd, &(parsed.state.wargv), WRDE_UNDEF) ){
-			case WRDE_SYNTAX:
-				error->eline = ln;
-				error->echr = strlen (buff) - strlen (parsed.cmd);
-				error->errmsg = CONFIG_ESTRSYNTAX;
-				ret = -1;
-				goto egress;
-
-			case WRDE_BADCHAR:
-				error->eline = ln;
-				error->echr = strlen (buff) - strlen (parsed.cmd);
-				error->errmsg = CONFIG_ESTRBADCHAR;
-				ret = -1;
-				goto egress;
-
-			case WRDE_BADVAL:
-				error->eline = ln;
-				error->echr = strlen (buff) - strlen (parsed.cmd);
-				error->errmsg = CONFIG_ESTRUNDEFVAR;
-				ret = -1;
-				goto egress;
-
-			case WRDE_NOSPACE:
-				error->eline = ln;
-				error->echr = strlen (buff) - strlen (parsed.cmd);
-				error->errmsg = CONFIG_ESTRNOMEM;
-				ret = -1;
-				goto egress;
-
-			default:
-				// Success
-				break;
-		}
-
-		if ( parsed.state.wargv.we_wordc == 0 ){
-			error->eline = ln;
-			error->echr = strlen (buff) - strlen (parsed.cmd);
-			error->errmsg = CONFIG_ESTRNOCMD;
-			ret = -1;
-			goto egress;
-		}
-
 		new_mem = (struct config_entry*) malloc (sizeof (struct config_entry));
 
 		if ( new_mem == NULL ){
@@ -261,9 +217,6 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 egress:
 	fclose (file);
 
-	if ( ret == -1 )
-		wordfree (&(parsed.state.wargv));
-
 	return ret;
 }
 
@@ -276,7 +229,6 @@ config_free (struct config_entry *config)
 
 	while ( config_iter != NULL ){
 		config_iter_next = config_iter->next;
-		wordfree (&(config_iter->state.wargv));
 		free (config_iter);
 		config_iter = config_iter_next;
 	}
