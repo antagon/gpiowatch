@@ -143,6 +143,12 @@ egress:
 	return ret;
 }
 
+#define CONFIG_ESTRSYNTAX "syntax error"
+#define CONFIG_ESTRBADCHAR "bad character"
+#define CONFIG_ESTRUNDEFVAR "referencing an undefined variable"
+#define CONFIG_ESTRNOMEM "out of memory"
+#define CONFIG_ESTRNOCMD "missing command"
+
 int
 config_parse (const char *path, struct config_entry **config, struct config_error *error)
 {
@@ -185,18 +191,43 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 
 		// Expand the command
 		switch ( wordexp (parsed.cmd, &(parsed.state.wargv), WRDE_UNDEF) ){
-			case 0:
-				// Success...
-				break;
-
-			// TODO: use different error cases as documented in man 3 wordexp.
-			default:
+			case WRDE_SYNTAX:
+				error->eline = ln;
+				error->echr = strlen (buff) - strlen (parsed.cmd);
+				error->errmsg = CONFIG_ESTRSYNTAX;
 				ret = -1;
 				goto egress;
+
+			case WRDE_BADCHAR:
+				error->eline = ln;
+				error->echr = strlen (buff) - strlen (parsed.cmd);
+				error->errmsg = CONFIG_ESTRBADCHAR;
+				ret = -1;
+				goto egress;
+
+			case WRDE_BADVAL:
+				error->eline = ln;
+				error->echr = strlen (buff) - strlen (parsed.cmd);
+				error->errmsg = CONFIG_ESTRUNDEFVAR;
+				ret = -1;
+				goto egress;
+
+			case WRDE_NOSPACE:
+				error->eline = ln;
+				error->echr = strlen (buff) - strlen (parsed.cmd);
+				error->errmsg = CONFIG_ESTRNOMEM;
+				ret = -1;
+				goto egress;
+
+			default:
+				// Success
+				break;
 		}
 
 		if ( parsed.state.wargv.we_wordc == 0 ){
-			fprintf (stderr, "FIXME: remove this line -- we_wordc == 0\n");
+			error->eline = ln;
+			error->echr = strlen (buff) - strlen (parsed.cmd);
+			error->errmsg = CONFIG_ESTRNOCMD;
 			ret = -1;
 			goto egress;
 		}
@@ -204,6 +235,9 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 		new_mem = (struct config_entry*) malloc (sizeof (struct config_entry));
 
 		if ( new_mem == NULL ){
+			error->eline = ln;
+			error->echr = -1;
+			error->errmsg = strerror (errno);
 			ret = -1;
 			goto egress;
 		}
@@ -226,6 +260,9 @@ config_parse (const char *path, struct config_entry **config, struct config_erro
 
 egress:
 	fclose (file);
+
+	if ( ret == -1 )
+		wordfree (&(parsed.state.wargv));
 
 	return ret;
 }
