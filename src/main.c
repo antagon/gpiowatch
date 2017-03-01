@@ -61,7 +61,7 @@ main (int argc, char *argv[])
 	struct config_error config_err;
 	struct pollfd fds[32];
 	uint32_t pin_state, gpioif_open, bit_weight;
-	int ret, i, pollres, forkres;
+	int ret, i, pollres;
 
 	config = NULL;
 	ret = EXIT_SUCCESS;
@@ -199,24 +199,7 @@ main (int argc, char *argv[])
 					// Threshold has been reach, execute a command...
 					syslog (LOG_INFO, "executing a command '%s'", config_iter->cmd);
 
-					forkres = fork ();
-
-					if ( forkres == -1 ){
-						syslog (LOG_ERR, "cannot fork process: %s", strerror (errno));
-						ret = EXIT_FAILURE;
-						goto egress;
-					}
-
-					if ( forkres == 0 ){
-						fclose (stdout);
-
-						// Child process...
-						if ( execvp (config_iter->state.wargv.we_wordv[0],
-										config_iter->state.wargv.we_wordv) == -1 ){
-							syslog (LOG_ERR, "cannot exec a command '%s': %s", config_iter->cmd, strerror (errno));
-							exit (1);
-						}
-					}
+					system (config_iter->cmd);
 				}
 				continue;
 			}
