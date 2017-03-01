@@ -119,7 +119,7 @@ main (int argc, char *argv[])
 	if ( sysfs_gpio_init () == -1 ){
 		fprintf (stderr, "%s: sysfs interface for GPIO does not exist\n", argv[0]);
 		ret = EXIT_FAILURE;
-		return ret;
+		goto egress;
 	}
 
 	for ( i = 0; i < sizeof (fds) / sizeof (fds[0]); i++ ){
