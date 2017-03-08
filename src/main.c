@@ -56,11 +56,12 @@ main (int argc, char *argv[])
 {
 	char buff[4];
 	const char *conf_path;
-	struct itimerval timer;
+	struct itimerval *timer_sched, timer_start, timer_stop;
 	struct config_entry *config, *config_iter;
 	struct config_error config_err;
 	struct pollfd fds[32];
 	uint32_t pin_state, gpioif_open, bit_weight;
+	uint8_t timer_state;
 	int ret, i, pollres;
 
 	config = NULL;
@@ -68,6 +69,18 @@ main (int argc, char *argv[])
 	conf_path = NULL;
 	pin_state = 0;
 	gpioif_open = 0;
+
+	/* Setup timer structs. */
+	timer_sched = NULL;
+	timer_state = 0;
+	timer_start.it_interval.tv_sec = 1;
+	timer_start.it_interval.tv_usec = 0;//900000;
+	timer_start.it_value.tv_sec = 1;//0;
+	timer_start.it_value.tv_usec = 0;//900000;
+	timer_stop.it_interval.tv_sec = 0;
+	timer_stop.it_interval.tv_usec = 0;
+	timer_stop.it_value.tv_sec = 0;
+	timer_stop.it_value.tv_usec = 0;
 
 	signal (SIGTERM, interrupt);
 	signal (SIGINT, interrupt);
@@ -160,21 +173,25 @@ main (int argc, char *argv[])
 		}
 	}
 
-	// Set timer
-	timer.it_interval.tv_sec = 0;
-	timer.it_interval.tv_usec = 900000;
-	timer.it_value.tv_sec = 1;
-	timer.it_value.tv_usec = 0;
-
-	if ( setitimer (ITIMER_REAL, &timer, NULL) == -1 ){
-		fprintf (stderr, "%s: cannot set interval timer: %s\n", argv[0], strerror (errno));
-		ret = EXIT_FAILURE;
-		goto egress;
-	}
-
 	syslog (LOG_INFO, "Started listening events on GPIO pins");
 
 	while ( ! sigexitloop ){
+		/* Setup a timer if there's no previous scheduler timer and pin state
+		 * is non zero. */
+		if ( !timer_state && pin_state )
+			timer_sched = &timer_start;
+
+		if ( timer_sched != NULL ){
+			if ( setitimer (ITIMER_REAL, timer_sched, NULL) == -1 ){
+				fprintf (stderr, "%s: cannot schedule a timer: %s\n", argv[0], strerror (errno));
+				ret = EXIT_FAILURE;
+				goto egress;
+			}
+
+			timer_state = (timer_sched == &timer_start)? 1:0;
+			timer_sched = NULL;
+		}
+
 		pollres = poll (fds, sizeof (fds) / sizeof (fds[0]), -1);
 
 		if ( pollres == -1 ){
@@ -196,11 +213,13 @@ main (int argc, char *argv[])
 						continue;
 					}
 
-					// Threshold has been reach, execute a command...
 					syslog (LOG_INFO, "exec '%s'", config_iter->cmd);
-
 					system (config_iter->cmd);
 				}
+
+				if ( !pin_state )
+					timer_sched = &timer_stop;
+
 				continue;
 			}
 
@@ -209,27 +228,25 @@ main (int argc, char *argv[])
 			goto egress;
 		}
 
-		if ( pollres > 0 ){
-			/* Read input from GPIO pins. */
-			for ( i = 0; i < sizeof (fds) / sizeof (fds[0]); i++ ){
-				if ( fds[i].revents & POLLPRI ){
-					uint8_t boolval;
+		/* Read input from GPIO pins. */
+		for ( i = 0; i < sizeof (fds) / sizeof (fds[0]); i++ ){
+			if ( fds[i].revents & POLLPRI ){
+				uint8_t boolval;
 
-					if ( read (fds[i].fd, buff, sizeof (buff)) == -1 ){
-						syslog (LOG_ERR, "reading from a file failed: %s\n", strerror (errno));
-						ret = EXIT_FAILURE;
-						goto egress;
-					}
-
-					if ( lseek (fds[i].fd, 0, SEEK_SET) == -1 ){
-						syslog (LOG_ERR, "lseek error: %s\n", strerror (errno));
-						ret = EXIT_FAILURE;
-						goto egress;
-					}
-
-					boolval = (buff[0] - '0') ? 1:0;
-					pin_state ^= (-boolval ^ pin_state) & (1 << (i));
+				if ( read (fds[i].fd, buff, sizeof (buff)) == -1 ){
+					syslog (LOG_ERR, "reading from a file failed: %s\n", strerror (errno));
+					ret = EXIT_FAILURE;
+					goto egress;
 				}
+
+				if ( lseek (fds[i].fd, 0, SEEK_SET) == -1 ){
+					syslog (LOG_ERR, "lseek error: %s\n", strerror (errno));
+					ret = EXIT_FAILURE;
+					goto egress;
+				}
+
+				boolval = (buff[0] - '0') ? 1:0;
+				pin_state ^= (-boolval ^ pin_state) & (1 << (i));
 			}
 		}
 	}
