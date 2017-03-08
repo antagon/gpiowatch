@@ -180,7 +180,7 @@ main (int argc, char *argv[])
 		if ( pollres == -1 ){
 			if ( errno == EINTR ){
 				/* Compare whether state of pins matches a configured pin mask. */
-				for ( config_iter = config; pin_state != 0x00 && config_iter != NULL; config_iter = config_iter->next ){
+				for ( config_iter = config; config_iter != NULL; config_iter = config_iter->next ){
 					/* Skip any that do not match the current pin state mask. */
 					if ( (config_iter->pin_mask & pin_state) != config_iter->pin_mask ){
 						config_iter->state.threshold = 0;
@@ -197,7 +197,7 @@ main (int argc, char *argv[])
 					}
 
 					// Threshold has been reach, execute a command...
-					syslog (LOG_INFO, "executing a command '%s'", config_iter->cmd);
+					syslog (LOG_INFO, "exec '%s'", config_iter->cmd);
 
 					system (config_iter->cmd);
 				}
