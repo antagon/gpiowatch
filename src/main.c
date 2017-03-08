@@ -30,7 +30,7 @@ interrupt (int signo)
 	sigexitloop = signo;
 }
 
-#define GPIOWATCH_VERSION "0.1"
+#define GPIOWATCH_VERSION "0.2"
 
 static void
 version (const char *p)
